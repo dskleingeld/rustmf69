@@ -25,4 +25,6 @@ fn main() {
 		let mut radio = Radio::new(spi, cs, Delay).unwrap();
 		radio.init(FreqencyBand::ISM433mhz, 0, 0, Bitrate::Standard)
 		     .expect("Could not init radio");
+
+		println!("radio init without problems!");
 }

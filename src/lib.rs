@@ -1,14 +1,17 @@
+#[macro_use]
+extern crate bitflags;
+
 //working off example (spi): https://github.com/japaric/mfrc522/blob/master/src/lib.rs
 //another example: https://github.com/JohnDoneth/hd44780-driver/blob/master/examples/raspberrypi/src/main.rs
 //#![no_std] //FIXME TODO remove all std lib dependencies
-mod registers;
-use registers::Register;
-
 extern crate embedded_hal as hal;
 use hal::blocking::spi;
 use hal::digital::OutputPin;
 use hal::spi::{Mode, Phase, Polarity};
 use hal::blocking::delay::{DelayMs, DelayUs};
+
+mod registers;
+use registers::Register;
 
 pub struct Radio<SPI, CS, D> {
 	spi: SPI,
@@ -53,7 +56,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 
 	pub fn init(&mut self, freq_band: FreqencyBand, node_id: u8, network_id: u8, speed: Bitrate) -> Result<(),()> {
 
-		self.cs.set_high();
+		//self.cs.set_high();
 
 		//check if the radio responds by seeing if we can change a register
 		let mut synced = false;
@@ -78,12 +81,16 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		}
 		if !synced {return Err(())}
 		
-
+		//configure the radio chips for normal use
+		self.configure_radio(freq_band, speed);
 
 		Ok(())
 	}
 
+	pub fn configure_radio(&mut self, freq_band: FreqencyBand, speed: Bitrate){
 
+
+	}
 
 
 	// pub fn send(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK=false) {
@@ -93,25 +100,20 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 
 	fn write_reg(&mut self, addr: Register, value: u8) {
 		let to_write: [u8; 2] = [addr.write_address(), value];
-		self.cs.set_low();
-		self.spi.write(&to_write).unwrap();
-		self.cs.set_high();
-		self.delay.delay_us(15u16);
-		dbg!(to_write);
 
+		//self.cs.set_low();
+		self.spi.write(&to_write).unwrap();
+		//self.cs.set_high();
+		self.delay.delay_us(15u16);
 	}
 
 	fn read_reg(&mut self, addr: Register) -> u8{
 		let mut to_transfer: [u8; 2] = [addr.read_address(), 0];
-		dbg!(to_transfer);
 
-		self.cs.set_low();
-
+		//self.cs.set_low();
 		let to_transfer = self.spi.transfer(&mut to_transfer).unwrap();
-		self.cs.set_high();
+		//self.cs.set_high();
 		self.delay.delay_us(15u16);
-
-		dbg!(to_transfer);
 
 		let awnser = to_transfer[1];
 		awnser
