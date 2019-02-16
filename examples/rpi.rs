@@ -8,7 +8,7 @@ use hal::Pin;
 use hal::sysfs_gpio::Direction;
 use hal::Delay;
 
-use pi_rmf69::{Radio, FreqencyBand, Bitrate};
+use pi_rmf69::{radio, FreqencyBand, Bitrate};
 
 fn main() {
     let cs = Pin::new(8);
@@ -22,9 +22,11 @@ fn main() {
         .build();
 		spi.configure(&options).unwrap();
 		
-		let mut radio = Radio::new(spi, cs, Delay).unwrap();
-		radio.init(FreqencyBand::ISM433mhz, 0, 0, Bitrate::Standard)
-		     .expect("Could not init radio");
+		let mut radio = radio(spi, cs, Delay)
+			.node_id(0)
+			.freqency_band(FreqencyBand::ISM433mhz)
+			.build()
+			.init().unwrap();
 
 		println!("radio init without problems!");
 }

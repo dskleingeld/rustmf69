@@ -15,23 +15,49 @@ impl Register {
     }
 }
 
-const RADIO_CONFIG: [[u8;2]; 10] =
+const DEFAULT_RADIO_CONFIG: [[u8;2]; 23] =
 [
 	[Register::Opmode as u8, OpMode::Sequencer_On.bits |  OpMode::Listen_Off.bits |  OpMode::Standby.bits ],
 	[Register::Datamodul as u8, Datamodul::Datamode_Packet.bits | Datamodul::Modulationtype_Fsk.bits ],
 
-	[Register::Bitratemsb as u8, Bitrate::Msb_55555.bits ],
-	[Register::Bitratelsb as u8, Bitrate::Lsb_55555.bits ],
+	[Register::Rxbw as u8, RxBw::Dccfreq_010.bits | RxBw::Mant_16.bits | RxBw::Exp_2.bits ],
+  [Register::Diomapping1 as u8, DioMapping1::Dio0_01.bits ], // Dio0 Is The Only Irq We'Re Using
+  [Register::Diomapping2 as u8, DioMapping2::Clkout_Off.bits ], // Dio5 Clkout Disable For Power Saving
+  [Register::Irqflags2 as u8, IrqFlags2::Fifooverrun.bits ], // Writing To This Bit Ensures That The Fifo & Status Flags Are Reset
 
-	[Register::Fdevmsb as u8, Fdev::Msb_50000.bits ],
-	[Register::Fdevlsb as u8, Fdev::Lsb_50000.bits ],
+  [Register::Syncconfig as u8, SyncConfig::On.bits | SyncConfig::Fifofill_Auto.bits |
+	                       SyncConfig::Size_2.bits | SyncConfig::Tol_0.bits ],
+  //Default Is 2 Bits For The Sync Value, Thus We Need To Set 2 Syncvalues
+  [Register::Syncvalue1 as u8, 0x2d ], // Attempt To Make This Compatible With Sync1 Byte Of Rfm12b Lib
+  [Register::Syncvalue2 as u8, 1 ],    // Will Be Replaced With Network Id //Todo Remove From Send Def. Config?
 
-	[Register::Frfmsb as u8, Frf::Msb_433.bits ], //TODO change with setting for freq
+  [Register::Packetconfig1 as u8, PacketConfig::Format_Variable.bits | PacketConfig::Dcfree_Off.bits |
+                                  PacketConfig::Crc_On.bits | PacketConfig::Crcautoclear_On.bits |
+                                  PacketConfig::Adrsfiltering_Off.bits ],
+
+  [Register::Fifothresh as u8, FifoThresh::Txstart_Fifonotempty.bits | FifoThresh::Value.bits ], // Tx On Fifo Not Empty
+  [Register::Packetconfig2 as u8, PacketConfig2::Rxrestartdelay_2bits.bits |
+	                          PacketConfig2::Autorxrestart_On.bits |
+	                          PacketConfig2::Aes_Off.bits ], // Rxrestartdelay Must Match Transmitter Pa Ramp-Down Time (Bitrate Dependent)
+  [Register::Testdagc as u8, TestDagc::Improved_Lowbeta0.bits ], // run DAGC continuously in RX mode for Fading Margin Improvement, recommended default for AfcLowBetaOn=0
+
+	//TODO make these dynamic
+	//RF Carrier Frequency,
+	[Register::Frfmsb as u8, Frf::Msb_433.bits ],
 	[Register::Frfmid as u8, Frf::Mid_433.bits ],
 	[Register::Frflsb as u8, Frf::Lsb_433.bits ],
 
-	[Register::Rxbw as u8, RxBw::Dccfreq_010.bits | RxBw::Mant_16.bits | RxBw::Exp_2.bits ],
+	//Frequency Deviation setting,
+	[Register::Fdevmsb as u8, Fdev::Msb_50000.bits ],
+	[Register::Fdevlsb as u8, Fdev::Lsb_50000.bits ],
 
+  [Register::Rssithresh as u8, 220 ], // Must Be Set To Dbm = (-Sensitivity / 2), Default Is 0xe4 = 228 So -114dbm
+  [Register::Payloadlength as u8, 66 ], // In Variable Length Mode: The Max Frame Size, Not Used In Tx
+  [Register::Nodeadrs as u8, 0 ], //  Address Filtering
+
+	//Bit Rate setting
+	[Register::Bitratemsb as u8, Bitrate::Msb_55555.bits ],
+	[Register::Bitratelsb as u8, Bitrate::Lsb_55555.bits ],
 ];
 
 //#define register extraction regex: #define (\w*)( *)(\w*)
@@ -453,5 +479,179 @@ struct RxBw: u8 {
 	const Exp_5 = 0x05;  // Recommended Default
 	const Exp_6 = 0x06;  // Reset Value
 	const Exp_7 = 0x07;
+}
+}
+
+//see table 21 and 22 in datasheet
+#[allow(dead_code)]
+bitflags! {
+struct DioMapping1: u8 {
+	const Dio0_00= 0x00;  // Default
+	const Dio0_01 = 0x40;
+	const Dio0_10 = 0x80;
+	const Dio0_11 = 0xc0;
+
+	const Dio1_00 = 0x00;  // Default
+	const Dio1_01 = 0x10;
+	const Dio1_10 = 0x20;
+	const Dio1_11 = 0x30;
+
+	const Dio2_00 = 0x00;  // Default
+	const Dio2_01 = 0x04;
+	const Dio2_10 = 0x08;
+	const Dio2_11 = 0x0c;
+
+	const Dio3_00 = 0x00;  // Default
+	const Dio3_01 = 0x01;
+	const Dio3_10 = 0x02;
+	const Dio3_11 = 0x03;
+}
+}
+
+//see table 21 and 22 in datasheet
+#[allow(dead_code)]
+bitflags! {
+struct DioMapping2: u8 {
+	const Dio4_00 = 0x00;  // Default
+	const Dio4_01 = 0x40;
+	const Dio4_10 = 0x80;
+	const Dio4_11 = 0xc0;
+
+	const Dio5_00 = 0x00;  // Default
+	const Dio5_01 = 0x10;
+	const Dio5_10 = 0x20;
+	const Dio5_11 = 0x30;
+
+	const Clkout_32 = 0x00;
+	const Clkout_16 = 0x01;
+	const Clkout_8 = 0x02;
+	const Clkout_4 = 0x03;
+	const Clkout_2 = 0x04;
+	const Clkout_1 = 0x05;  // Reset Value
+	const Clkout_Rc = 0x06;
+	const Clkout_Off = 0x07;  // Recommended default
+}
+}
+
+#[allow(dead_code)]
+bitflags! {
+struct IrqFlags1: u8 {
+	const Modeready            = 0x80;
+	const Rxready              = 0x40;
+	const Txready              = 0x20;
+	const Plllock              = 0x10;
+	const Rssi                 = 0x08;
+	const Timeout              = 0x04;
+	const Automode             = 0x02;
+	const SyncaddrESSMATCH     = 0x01;
+}
+}
+
+#[allow(dead_code)]
+bitflags! {
+struct IrqFlags2: u8 {
+	const Fifofull             = 0x80;
+	const Fifonotempty         = 0x40;
+	const Fifolevel            = 0x20;
+	const Fifooverrun          = 0x10;
+	const Packetsent           = 0x08;
+	const Payloadready         = 0x04;
+	const Crcok                = 0x02;
+	const Lowbat               = 0x01;
+}
+}
+
+#[allow(dead_code)]
+bitflags! {
+struct SyncConfig: u8 {
+	const On                = 0x80;
+	const Off               = 0x00;
+
+	const Fifofill_Auto     = 0x00;
+	const Fifofill_Manual   = 0x40;
+
+	const Size_1            = 0x00;
+	const Size_2            = 0x08;
+	const Size_3            = 0x10;
+	const Size_4            = 0x18;
+	const Size_5            = 0x20;
+	const Size_6            = 0x28;
+	const Size_7            = 0x30;
+	const Size_8            = 0x38;
+
+	const Tol_0             = 0x00;
+	const Tol_1             = 0x01;
+	const Tol_2             = 0x02;
+	const Tol_3             = 0x03;
+	const Tol_4             = 0x04;
+	const Tol_5             = 0x05;
+	const Tol_6             = 0x06;
+	const TOL_7             = 0x07;
+}
+}
+
+#[allow(dead_code)]
+bitflags! {
+struct PacketConfig: u8 {
+	const Format_Fixed       = 0x00;
+	const Format_Variable    = 0x80;
+
+	const Dcfree_Off         = 0x00;
+	const Dcfree_Manchester  = 0x20;
+	const Dcfree_Whitening   = 0x40;
+
+	const Crc_On             = 0x10;
+	const Crc_Off            = 0x00;
+
+	const Crcautoclear_On    = 0x00;
+	const Crcautoclear_Off   = 0x08;
+
+	const Adrsfiltering_Off            = 0x00;
+	const Adrsfiltering_Node           = 0x02;
+	const Adrsfiltering_Nodebroadcast  = 0x04;
+}
+}
+
+#[allow(dead_code)]
+bitflags! {
+struct FifoThresh: u8 {
+	const Txstart_Fifothresh   = 0x00;
+	const Txstart_Fifonotempty = 0x80;
+	const Value                = 0x0f;
+}
+}
+
+#[allow(dead_code)]
+bitflags! {
+struct PacketConfig2: u8 {
+	const Rxrestartdelay_1bit        = 0x00;
+	const Rxrestartdelay_2bits       = 0x10;
+	const Rxrestartdelay_4bits       = 0x20;
+	const Rxrestartdelay_8bits       = 0x30;
+	const Rxrestartdelay_16bits      = 0x40;
+	const Rxrestartdelay_32bits      = 0x50;
+	const Rxrestartdelay_64bits      = 0x60;
+	const Rxrestartdelay_128bits     = 0x70;
+	const Rxrestartdelay_256bits     = 0x80;
+	const Rxrestartdelay_512bits     = 0x90;
+	const Rxrestartdelay_1024bits    = 0xa0;
+	const Rxrestartdelay_2048bits    = 0xb0;
+	const Rxrestartdelay_None        = 0xc0;
+	const Rxrestart                  = 0x04;
+
+	const Autorxrestart_On           = 0x02;
+	const Autorxrestart_Off          = 0x00;
+
+	const Aes_On                     = 0x01;
+	const Aes_Off                    = 0x00;
+}
+}
+
+#[allow(dead_code)]
+bitflags! {
+struct TestDagc: u8 {
+	const Normal            = 0x00;
+	const Improved_Lowbeta1 = 0x20;
+	const Improved_Lowbeta0 = 0x30;
 }
 }
