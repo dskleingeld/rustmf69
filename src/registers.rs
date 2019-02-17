@@ -15,50 +15,40 @@ impl Register {
     }
 }
 
-const DEFAULT_RADIO_CONFIG: [[u8;2]; 23] =
+const DEFAULT_RADIO_CONFIG: [[u8;2]; 12] =
 [
 	[Register::Opmode as u8, OpMode::Sequencer_On.bits |  OpMode::Listen_Off.bits |  OpMode::Standby.bits ],
 	[Register::Datamodul as u8, Datamodul::Datamode_Packet.bits | Datamodul::Modulationtype_Fsk.bits ],
 
 	[Register::Rxbw as u8, RxBw::Dccfreq_010.bits | RxBw::Mant_16.bits | RxBw::Exp_2.bits ],
-  [Register::Diomapping1 as u8, DioMapping1::Dio0_01.bits ], // Dio0 Is The Only Irq We'Re Using
-  [Register::Diomapping2 as u8, DioMapping2::Clkout_Off.bits ], // Dio5 Clkout Disable For Power Saving
-  [Register::Irqflags2 as u8, IrqFlags2::Fifooverrun.bits ], // Writing To This Bit Ensures That The Fifo & Status Flags Are Reset
+  //only enable interrupts on Dio0
+  [Register::Diomapping1 as u8, DioMapping1::Dio0_01.bits ],
+  //disable other output pins to save power
+  [Register::Diomapping2 as u8, DioMapping2::Clkout_Off.bits ],
+  // Writing To This Bit Ensures That The Fifo & Status Flags Are Reset
+  [Register::Irqflags2 as u8, IrqFlags2::Fifooverrun.bits ],
 
   [Register::Syncconfig as u8, SyncConfig::On.bits | SyncConfig::Fifofill_Auto.bits |
-	                       SyncConfig::Size_2.bits | SyncConfig::Tol_0.bits ],
+	                             SyncConfig::Size_2.bits | SyncConfig::Tol_0.bits ],
   //Default Is 2 Bits For The Sync Value, Thus We Need To Set 2 Syncvalues
   [Register::Syncvalue1 as u8, 0x2d ], // Attempt To Make This Compatible With Sync1 Byte Of Rfm12b Lib
-  [Register::Syncvalue2 as u8, 1 ],    // Will Be Replaced With Network Id //Todo Remove From Send Def. Config?
 
   [Register::Packetconfig1 as u8, PacketConfig::Format_Variable.bits | PacketConfig::Dcfree_Off.bits |
                                   PacketConfig::Crc_On.bits | PacketConfig::Crcautoclear_On.bits |
                                   PacketConfig::Adrsfiltering_Off.bits ],
 
   [Register::Fifothresh as u8, FifoThresh::Txstart_Fifonotempty.bits | FifoThresh::Value.bits ], // Tx On Fifo Not Empty
+
+  // Rxrestartdelay Must Match Transmitter Pa Ramp-Down Time (Bitrate Dependent)
   [Register::Packetconfig2 as u8, PacketConfig2::Rxrestartdelay_2bits.bits |
-	                          PacketConfig2::Autorxrestart_On.bits |
-	                          PacketConfig2::Aes_Off.bits ], // Rxrestartdelay Must Match Transmitter Pa Ramp-Down Time (Bitrate Dependent)
-  [Register::Testdagc as u8, TestDagc::Improved_Lowbeta0.bits ], // run DAGC continuously in RX mode for Fading Margin Improvement, recommended default for AfcLowBetaOn=0
-
-	//TODO make these dynamic
-	//RF Carrier Frequency,
-	[Register::Frfmsb as u8, Frf::Msb_433.bits ],
-	[Register::Frfmid as u8, Frf::Mid_433.bits ],
-	[Register::Frflsb as u8, Frf::Lsb_433.bits ],
-
-	//Frequency Deviation setting,
-	[Register::Fdevmsb as u8, Fdev::Msb_50000.bits ],
-	[Register::Fdevlsb as u8, Fdev::Lsb_50000.bits ],
-
-  [Register::Rssithresh as u8, 220 ], // Must Be Set To Dbm = (-Sensitivity / 2), Default Is 0xe4 = 228 So -114dbm
-  [Register::Payloadlength as u8, 66 ], // In Variable Length Mode: The Max Frame Size, Not Used In Tx
-  [Register::Nodeadrs as u8, 0 ], //  Address Filtering
-
-	//Bit Rate setting
-	[Register::Bitratemsb as u8, Bitrate::Msb_55555.bits ],
-	[Register::Bitratelsb as u8, Bitrate::Lsb_55555.bits ],
+	                                PacketConfig2::Autorxrestart_On.bits |
+	                                PacketConfig2::Aes_Off.bits ],
+  // run DAGC continuously in RX mode for Fading Margin Improvement, recommended default for AfcLowBetaOn=0
+  [Register::Testdagc as u8, TestDagc::Improved_Lowbeta0.bits ],
 ];
+
+
+pub const RF69_FSTEP: f32 = 61.03515625; // == FXOSC / 2^19 = 32MHz / 2^19 (p13 in datasheet)
 
 //#define register extraction regex: #define (\w*)( *)(\w*)
 //and list code: \t$1$2= $3,\n
@@ -153,11 +143,13 @@ pub enum Register {
 
 #[allow(dead_code)]
 bitflags! {
-struct OpMode: u8 {
+pub struct OpMode: u8 {
 	const Sequencer_Off = 0b10000000;
 	const Sequencer_On  = 0;
+
 	const Listen_On     = 0b01000000;
 	const Listen_Off    = 0;
+
 	const Listenabort   = 0b00100000;
 
 	const Sleep         = 0b000;
@@ -165,6 +157,8 @@ struct OpMode: u8 {
 	const Synthesizer   = 0b010;
 	const Transmitter   = 0b011;
 	const Receiver      = 0b100;
+	const Mode = Self::Sleep.bits | Self::Standby.bits | Self::Synthesizer.bits |
+	             Self::Transmitter.bits| Self::Receiver.bits;
 }
 }
 

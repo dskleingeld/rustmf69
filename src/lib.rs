@@ -12,7 +12,7 @@ use hal::spi::{Mode, Phase, Polarity};
 use hal::blocking::delay::{DelayMs, DelayUs};
 
 mod registers;
-use registers::Register;
+use registers::{Register, RF69_FSTEP};
 mod builder;
 pub use builder::{RadioBuilder,radio};
 
@@ -32,11 +32,11 @@ pub struct Radio<SPI, CS, DELAY> {
 
 
 #[allow(dead_code)]
-#[derive(Debug)]
-enum RadioMode {
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum RadioMode { //rename transeiver?
 	Sleep = 0, // Xtal Off
 	Standby = 1, // Xtal On
-	Synth = 2, // Pll On
+	FreqSynth = 2, // Pll On
 	Rx = 3, // Rx Mode
 	Tx = 4, // Tx Mode
 }
@@ -64,10 +64,10 @@ impl Default for Bitrate {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum FreqencyBand {
-	ISM315mhz = 31, // Non Trivial Values To Avoid Misconfiguration
-	ISM433mhz = 43,
-	ISM868mhz = 86,
-	ISM915mhz = 91,
+	ISM315mhz,
+	ISM433mhz,
+	ISM868mhz,
+	ISM915mhz,
 }
 
 
@@ -111,14 +111,89 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 
 	pub fn configure_radio(&mut self){
 
-
+		self.set_node_id();
+		self.set_network_id();
+		self.set_rssi_threashold();
+		self.set_bitrate();
+		self.set_frequency(40);
 	}
+
 
 
 	// pub fn send(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK=false) {
 	
 	
 	// }
+/*
+		[Register::Syncvalue2 as u8, 1 ],    // Will Be Replaced With Network Id
+
+		//Frequency Deviation setting,
+		[Register::Fdevmsb as u8, Fdev::Msb_50000.bits ],
+		[Register::Fdevlsb as u8, Fdev::Lsb_50000.bits ],
+
+		[Register::Rssithresh as u8, 220 ], // Must Be Set To Dbm = (-Sensitivity / 2), Default Is 0xe4 = 228 So -114dbm
+		[Register::Payloadlength as u8, 66 ], // In Variable Length Mode: The Max Frame Size, Not Used In Tx
+		[Register::Nodeadrs as u8, 0 ], //  Address Filtering
+
+		//Bit Rate setting
+		[Register::Bitratemsb as u8, Bitrate::Msb_55555.bits ],
+		[Register::Bitratelsb as u8, Bitrate::Lsb_55555.bits ],
+*/
+	fn set_node_id(&self) {
+		//TODO
+	}
+
+	fn set_rssi_threashold(&self) {
+		//TODO
+
+	}
+
+	fn set_network_id(&self) {
+		//TODO
+
+	}
+
+	fn set_bitrate(&self) {
+		//TODO
+
+	}
+
+	//see page 38 in the datasheet,
+	//TODO research Fdev and do that too
+	fn set_frequency(&mut self, target_freqency: u32){
+		//TODO get freq from band or manually set freq (add funct to builder for this)
+		let freqHz = (target_freqency as f32 / RF69_FSTEP) as u32; // divide down by FSTEP to get FRF
+	  //TODO disable automatic seqencer if enabled
+	  if self.mode == RadioMode::Tx {
+	  	//TODO switch to Rx mode
+			self.write_reg(Register::Frfmsb, (freqHz >> 16) as u8);
+			self.write_reg(Register::Frfmid, (freqHz >> 8) as u8);
+			self.write_reg(Register::Frflsb, freqHz as u8);
+			//TODO switch back to Tx mode
+		} else {
+			let old_mode = self.mode;
+			self.write_reg(Register::Frfmsb, (freqHz >> 16) as u8);
+			self.write_reg(Register::Frfmid, (freqHz >> 8) as u8);
+			self.write_reg(Register::Frflsb, freqHz as u8);
+			//TODO switch to FreqSynth mode
+			//TODO switch back to old mode
+		}
+	}
+
+	fn switch_transceiver_mode(&mut self, new_mode: RadioMode) {
+		use registers::OpMode;
+
+		let old_bitflag = OpMode::from_bits(self.read_reg(Register::Opmode)).unwrap() - OpMode::Mode;
+		let new_bitflag = match (new_mode) {
+			RadioMode::Sleep => old_bitflag | OpMode::Sleep, // Xtal Off
+			RadioMode::Standby => old_bitflag | OpMode::Sleep, // Xtal On
+			RadioMode::FreqSynth => old_bitflag | OpMode::Sleep, // Pll On
+			RadioMode::Rx => old_bitflag | OpMode::Sleep, // Rx Mode
+			RadioMode::Tx => old_bitflag | OpMode::Sleep, // Tx Mode
+		};
+		self.write_reg(Register::Opmode, new_bitflag.bits());
+		self.mode = new_mode;
+	}
 
 	fn write_reg(&mut self, addr: Register, value: u8) {
 		let to_write: [u8; 2] = [addr.write_address(), value];
