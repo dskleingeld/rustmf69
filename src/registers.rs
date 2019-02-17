@@ -15,9 +15,10 @@ impl Register {
     }
 }
 
-const DEFAULT_RADIO_CONFIG: [[u8;2]; 12] =
+//list of good defaults for registers that should not change during operation.
+const DEFAULT_RADIO_CONFIG: [[u8;2]; 11] =
 [
-	[Register::Opmode as u8, OpMode::Sequencer_On.bits |  OpMode::Listen_Off.bits |  OpMode::Standby.bits ],
+	//[Register::Opmode as u8, OpMode::Sequencer_On.bits |  OpMode::Listen_Off.bits |  OpMode::Standby.bits ],//TODO remove from here and do dynamic
 	[Register::Datamodul as u8, Datamodul::Datamode_Packet.bits | Datamodul::Modulationtype_Fsk.bits ],
 
 	[Register::Rxbw as u8, RxBw::Dccfreq_010.bits | RxBw::Mant_16.bits | RxBw::Exp_2.bits ],
@@ -29,13 +30,14 @@ const DEFAULT_RADIO_CONFIG: [[u8;2]; 12] =
   [Register::Irqflags2 as u8, IrqFlags2::Fifooverrun.bits ],
 
   [Register::Syncconfig as u8, SyncConfig::On.bits | SyncConfig::Fifofill_Auto.bits |
-	                             SyncConfig::Size_2.bits | SyncConfig::Tol_0.bits ],
+	                             SyncConfig::Size_2.bits | SyncConfig::Tol_0.bits ],//TODO remove
   //Default Is 2 Bits For The Sync Value, Thus We Need To Set 2 Syncvalues
   [Register::Syncvalue1 as u8, 0x2d ], // Attempt To Make This Compatible With Sync1 Byte Of Rfm12b Lib
+	//syncvalue2 (used as network id) is set in the filtering setup function
 
-  [Register::Packetconfig1 as u8, PacketConfig::Format_Variable.bits | PacketConfig::Dcfree_Off.bits |
-                                  PacketConfig::Crc_On.bits | PacketConfig::Crcautoclear_On.bits |
-                                  PacketConfig::Adrsfiltering_Off.bits ],
+  [Register::Packetconfig1 as u8, PacketConfig1::Format_Variable.bits | PacketConfig1::Dcfree_Off.bits |
+                                  PacketConfig1::Crc_On.bits | PacketConfig1::Crcautoclear_On.bits |
+                                  PacketConfig1::Adrsfiltering_Off.bits ],//TODO remove
 
   [Register::Fifothresh as u8, FifoThresh::Txstart_Fifonotempty.bits | FifoThresh::Value.bits ], // Tx On Fifo Not Empty
 
@@ -145,10 +147,10 @@ pub enum Register {
 bitflags! {
 pub struct OpMode: u8 {
 	const Sequencer_Off = 0b10000000;
-	const Sequencer_On  = 0;
+	//const Sequencer_On  = 0;
 
 	const Listen_On     = 0b01000000;
-	const Listen_Off    = 0;
+	//const Listen_Off    = 0;
 
 	const Listenabort   = 0b00100000;
 
@@ -157,6 +159,7 @@ pub struct OpMode: u8 {
 	const Synthesizer   = 0b010;
 	const Transmitter   = 0b011;
 	const Receiver      = 0b100;
+
 	const Mode = Self::Sleep.bits | Self::Standby.bits | Self::Synthesizer.bits |
 	             Self::Transmitter.bits| Self::Receiver.bits;
 }
@@ -529,7 +532,7 @@ struct DioMapping2: u8 {
 
 #[allow(dead_code)]
 bitflags! {
-struct IrqFlags1: u8 {
+pub struct IrqFlags1: u8 {
 	const Modeready            = 0x80;
 	const Rxready              = 0x40;
 	const Txready              = 0x20;
@@ -557,7 +560,7 @@ struct IrqFlags2: u8 {
 
 #[allow(dead_code)]
 bitflags! {
-struct SyncConfig: u8 {
+pub struct SyncConfig: u8 {
 	const On                = 0x80;
 	const Off               = 0x00;
 
@@ -572,6 +575,9 @@ struct SyncConfig: u8 {
 	const Size_6            = 0x28;
 	const Size_7            = 0x30;
 	const Size_8            = 0x38;
+	const Size = Self::Size_1.bits | Self::Size_2.bits | Self::Size_3.bits |
+	             Self::Size_4.bits | Self::Size_5.bits | Self::Size_6.bits |
+	             Self::Size_7.bits | Self::Size_8.bits;
 
 	const Tol_0             = 0x00;
 	const Tol_1             = 0x01;
@@ -586,7 +592,7 @@ struct SyncConfig: u8 {
 
 #[allow(dead_code)]
 bitflags! {
-struct PacketConfig: u8 {
+pub struct PacketConfig1: u8 {
 	const Format_Fixed       = 0x00;
 	const Format_Variable    = 0x80;
 
@@ -603,6 +609,8 @@ struct PacketConfig: u8 {
 	const Adrsfiltering_Off            = 0x00;
 	const Adrsfiltering_Node           = 0x02;
 	const Adrsfiltering_Nodebroadcast  = 0x04;
+	const Adrsfiltering = Self::Adrsfiltering_Off.bits | Self::Adrsfiltering_Node.bits |
+	                      Self::Adrsfiltering_Nodebroadcast.bits;
 }
 }
 

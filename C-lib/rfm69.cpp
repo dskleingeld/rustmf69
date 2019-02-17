@@ -328,7 +328,7 @@ bool RFM69::packageInFifo(){
 }
 
 bool RFM69::recieveShort() {
-		setMode(RF69_MODE_STANDBY);
+	setMode(RF69_MODE_STANDBY);
 	rawDATA[0] = REG_FIFO & 0x7F;
 	rawDATA[1] = 0; // PAYLOADLEN
 	rawDATA[2] = 0; //  TargetID

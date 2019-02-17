@@ -6,6 +6,7 @@ extern crate embedded_hal as hal;
 #[macro_use]
 extern crate bitflags;
 
+use core::num::NonZeroU8;
 use hal::blocking::spi;
 use hal::digital::OutputPin;
 use hal::spi::{Mode, Phase, Polarity};
@@ -22,14 +23,51 @@ pub struct Radio<SPI, CS, DELAY> {
 	delay: DELAY,
 
 	freq_band: FreqencyBand, //non optional
-	node_id: u8,   //non optional
-	network_id: u8,//optional (default = 0)
+	freq: u32,
 	bitrate: Bitrate,   //optional (default = smthg)
 	power_level: u8, //optional (default, max)
 
+	network_filtering: Option<NonZeroU8>,
+	adress_filtering: AddressFiltering,
+
 	mode: RadioMode,
+	sequencer_on: bool,//TODO remove in favor of using the cached flags
+	listen_on: bool,
+
+	register_flags: RegisterFlags
 }
 
+//local copy of register flags to save register read operations
+struct RegisterFlags {
+	mode: registers::OpMode,
+	sync: registers::SyncConfig,
+	config1: registers::PacketConfig1,
+}
+
+impl Default for RegisterFlags {
+	fn default() -> Self {
+		Self {
+			mode: registers::OpMode::Standby
+		          & !registers::OpMode::Sequencer_Off
+		          & !registers::OpMode::Listen_On,
+			sync: registers::SyncConfig::On
+			      | registers::SyncConfig::Fifofill_Auto
+			      | registers::SyncConfig::Size_2
+			      | registers::SyncConfig::Tol_0,
+			config1: registers::PacketConfig1::Format_Variable
+			      | registers::PacketConfig1::Dcfree_Off
+			      | registers::PacketConfig1::Crc_On
+			      | registers::PacketConfig1::Crcautoclear_On
+			      | registers::PacketConfig1::Adrsfiltering_Off,
+		}
+	}
+}
+
+enum AddressFiltering {
+	None,
+	AddressOnly(u8),
+	AddressOrBroadcast((u8,u8)), //(addr, broadcast_addr)
+}
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -69,7 +107,6 @@ pub enum FreqencyBand {
 	ISM868mhz,
 	ISM915mhz,
 }
-
 
 impl<SPI,CS, D, E> Radio<SPI, CS, D>
 where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
@@ -111,11 +148,10 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 
 	pub fn configure_radio(&mut self){
 
-		self.set_node_id();
-		self.set_network_id();
+		self.set_package_filtering();
 		self.set_rssi_threashold();
 		self.set_bitrate();
-		self.set_frequency(40);
+		self.set_frequency();
 	}
 
 
@@ -139,19 +175,49 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		[Register::Bitratemsb as u8, Bitrate::Msb_55555.bits ],
 		[Register::Bitratelsb as u8, Bitrate::Lsb_55555.bits ],
 */
-	fn set_node_id(&self) {
-		//TODO
+	fn set_package_filtering(&mut self) {
+		use registers::SyncConfig;
+		use registers::PacketConfig1;
+
+		match self.network_filtering {
+			None =>	{//switch to one sync word (second one is used as network id)
+				self.register_flags.sync = (self.register_flags.sync - SyncConfig::Size) | SyncConfig::Size_1;
+				self.write_reg(Register::Syncconfig, self.register_flags.sync.bits());
+			},
+			Some(network_id) => {
+				self.register_flags.sync = (self.register_flags.sync - SyncConfig::Size) | SyncConfig::Size_2;
+				self.write_reg(Register::Syncconfig, self.register_flags.sync.bits());
+				self.write_reg(Register::Syncvalue2, network_id.get());
+			},
+		}
+
+		self.register_flags.config1 -= PacketConfig1::Adrsfiltering;
+		match self.adress_filtering {
+			AddressFiltering::None => {
+				self.register_flags.config1 |= PacketConfig1::Adrsfiltering_Off;
+				self.write_reg(Register::Packetconfig1, self.register_flags.config1.bits());
+			},
+			AddressFiltering::AddressOnly(node_addr) => {
+				self.register_flags.config1 |= PacketConfig1::Adrsfiltering_Node;
+				self.write_reg(Register::Packetconfig1, self.register_flags.config1.bits());
+				self.write_reg(Register::Nodeadrs, node_addr);
+			},
+			AddressFiltering::AddressOrBroadcast((node_addr,broadcast_addr)) => {
+				self.register_flags.config1 |= PacketConfig1::Adrsfiltering_Nodebroadcast;
+				self.write_reg(Register::Packetconfig1, self.register_flags.config1.bits());
+				self.write_reg(Register::Nodeadrs, node_addr);
+				self.write_reg(Register::Broadcastadrs, broadcast_addr);
+			},
+		}
 	}
+
 
 	fn set_rssi_threashold(&self) {
 		//TODO
 
 	}
 
-	fn set_network_id(&self) {
-		//TODO
 
-	}
 
 	fn set_bitrate(&self) {
 		//TODO
@@ -160,39 +226,55 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 
 	//see page 38 in the datasheet,
 	//TODO research Fdev and do that too
-	fn set_frequency(&mut self, target_freqency: u32){
-		//TODO get freq from band or manually set freq (add funct to builder for this)
-		let freqHz = (target_freqency as f32 / RF69_FSTEP) as u32; // divide down by FSTEP to get FRF
-	  //TODO disable automatic seqencer if enabled
+	fn set_frequency(&mut self) -> Result<(),()> {
+		let FRF = (self.freq as f32 / RF69_FSTEP) as u32; // divide down by FSTEP to get FRF
+	  if self.sequencer_on {//TODO rewrite to use local bitflags copy
+	  	self.write_reg(Register::Opmode, (FRF >> 16) as u8); }
 	  if self.mode == RadioMode::Tx {
-	  	//TODO switch to Rx mode
-			self.write_reg(Register::Frfmsb, (freqHz >> 16) as u8);
-			self.write_reg(Register::Frfmid, (freqHz >> 8) as u8);
-			self.write_reg(Register::Frflsb, freqHz as u8);
-			//TODO switch back to Tx mode
+			self.switch_transeiver_mode_blocking(RadioMode::Rx)?;
+			self.write_reg(Register::Frfmsb, (FRF >> 16) as u8);
+			self.write_reg(Register::Frfmid, (FRF >> 8) as u8);
+			self.write_reg(Register::Frflsb, FRF as u8);
+			self.switch_transeiver_mode_blocking(RadioMode::Tx)?;
 		} else {
 			let old_mode = self.mode;
-			self.write_reg(Register::Frfmsb, (freqHz >> 16) as u8);
-			self.write_reg(Register::Frfmid, (freqHz >> 8) as u8);
-			self.write_reg(Register::Frflsb, freqHz as u8);
-			//TODO switch to FreqSynth mode
-			//TODO switch back to old mode
+			self.write_reg(Register::Frfmsb, (FRF >> 16) as u8);
+			self.write_reg(Register::Frfmid, (FRF >> 8) as u8);
+			self.write_reg(Register::Frflsb, FRF as u8);
+			self.switch_transeiver_mode_blocking(RadioMode::FreqSynth)?;
+			self.switch_transeiver_mode_blocking(old_mode)?;
 		}
+		//TODO enable automatic seqencer if it was enabled
+		Ok(())
 	}
 
 	fn switch_transceiver_mode(&mut self, new_mode: RadioMode) {
 		use registers::OpMode;
 
-		let old_bitflag = OpMode::from_bits(self.read_reg(Register::Opmode)).unwrap() - OpMode::Mode;
-		let new_bitflag = match (new_mode) {
-			RadioMode::Sleep => old_bitflag | OpMode::Sleep, // Xtal Off
-			RadioMode::Standby => old_bitflag | OpMode::Sleep, // Xtal On
-			RadioMode::FreqSynth => old_bitflag | OpMode::Sleep, // Pll On
-			RadioMode::Rx => old_bitflag | OpMode::Sleep, // Rx Mode
-			RadioMode::Tx => old_bitflag | OpMode::Sleep, // Tx Mode
+		let old_flag = self.register_flags.mode - OpMode::Mode;
+		self.register_flags.mode = match new_mode {
+			RadioMode::Sleep => old_flag | OpMode::Sleep, // Xtal Off
+			RadioMode::Standby => old_flag | OpMode::Standby, // Xtal On
+			RadioMode::FreqSynth => old_flag | OpMode::Synthesizer, // Pll On
+			RadioMode::Rx => old_flag | OpMode::Receiver, // Rx Mode
+			RadioMode::Tx => old_flag | OpMode::Transmitter, // Tx Mode
 		};
-		self.write_reg(Register::Opmode, new_bitflag.bits());
+		self.write_reg(Register::Opmode, self.register_flags.mode.bits());
 		self.mode = new_mode;
+	}
+
+	fn switch_transeiver_mode_blocking(&mut self, new_mode: RadioMode) -> Result<(),()>{
+		use registers::IrqFlags1;
+
+		self.switch_transceiver_mode(new_mode);
+		for _attempt in 0..10 {//try for one millisecond
+			let interrupt_flag = IrqFlags1::from_bits(self.read_reg(Register::Irqflags1)).unwrap();
+			if interrupt_flag.contains(IrqFlags1::Modeready){
+				return Ok(())
+			}
+			self.delay.delay_us(100u16);
+		}
+		Err(())
 	}
 
 	fn write_reg(&mut self, addr: Register, value: u8) {
