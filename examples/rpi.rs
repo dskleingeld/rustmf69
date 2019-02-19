@@ -23,7 +23,7 @@ fn main() {
 		spi.configure(&options).unwrap();
 		
 		let mut radio = radio(spi, cs, Delay)
-			.node_id(0)
+			.adress(0)
 			.freqency_band(FreqencyBand::ISM433mhz)
 			.build()
 			.init().unwrap();

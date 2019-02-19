@@ -49,7 +49,7 @@ const DEFAULT_RADIO_CONFIG: [[u8;2]; 11] =
   [Register::Testdagc as u8, TestDagc::Improved_Lowbeta0.bits ],
 ];
 
-
+pub const FXOSC: u32 =	32_000_000; //crystal osscilator frequency
 pub const RF69_FSTEP: f32 = 61.03515625; // == FXOSC / 2^19 = 32MHz / 2^19 (p13 in datasheet)
 
 //#define register extraction regex: #define (\w*)( *)(\w*)
@@ -182,7 +182,7 @@ struct Datamodul: u8 {
 
 #[allow(dead_code)]
 bitflags! {
-struct Bitrate: u8 {
+pub struct Bitrate: u8 {
 	const Msb_1200= 0x68;
 	const Lsb_1200= 0x2b;
 	const Msb_2400= 0x34;
@@ -593,7 +593,7 @@ pub struct SyncConfig: u8 {
 #[allow(dead_code)]
 bitflags! {
 pub struct PacketConfig1: u8 {
-	const Format_Fixed       = 0x00;
+	//const Format_Fixed       = 0x00; //not format variable
 	const Format_Variable    = 0x80;
 
 	const Dcfree_Off         = 0x00;
@@ -606,7 +606,7 @@ pub struct PacketConfig1: u8 {
 	const Crcautoclear_On    = 0x00;
 	const Crcautoclear_Off   = 0x08;
 
-	const Adrsfiltering_Off            = 0x00;
+	const Adrsfiltering_Off            = 0x00; //not the others
 	const Adrsfiltering_Node           = 0x02;
 	const Adrsfiltering_Nodebroadcast  = 0x04;
 	const Adrsfiltering = Self::Adrsfiltering_Off.bits | Self::Adrsfiltering_Node.bits |

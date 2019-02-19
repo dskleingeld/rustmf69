@@ -13,7 +13,7 @@ use hal::spi::{Mode, Phase, Polarity};
 use hal::blocking::delay::{DelayMs, DelayUs};
 
 mod registers;
-use registers::{Register, RF69_FSTEP};
+use registers::{Register, RF69_FSTEP, FXOSC};
 mod builder;
 pub use builder::{RadioBuilder,radio};
 
@@ -31,8 +31,7 @@ pub struct Radio<SPI, CS, DELAY> {
 	adress_filtering: AddressFiltering,
 
 	mode: RadioMode,
-	sequencer_on: bool,//TODO remove in favor of using the cached flags
-	listen_on: bool,
+	package_len: PackageLength,
 
 	register_flags: RegisterFlags
 }
@@ -88,14 +87,29 @@ impl Default for RadioMode {
 #[allow(dead_code)]
 #[derive(Debug,Clone)]
 pub enum Bitrate { 
+	Lowest,
 	Low, 
+	Standard,
 	High,
-	Standard, 
+	Custom(u32),
 }
 
 impl Default for Bitrate {
 	fn default() -> Self {
 		Bitrate::Standard
+	}
+}
+
+#[allow(dead_code)]
+#[derive(Debug,Clone)]
+pub enum PackageLength {
+	Fixed(u8), //in bytes
+	Max(u8),
+}
+
+impl Default for PackageLength {
+	fn default() -> Self {
+		PackageLength::Fixed(16)
 	}
 }
 
@@ -149,12 +163,24 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 	pub fn configure_radio(&mut self){
 
 		self.set_package_filtering();
-		self.set_rssi_threashold();
 		self.set_bitrate();
 		self.set_frequency();
+		self.set_payload_length();
 	}
 
-
+	fn set_payload_length(&mut self){
+		match self.package_len {
+			PackageLength::Fixed(len) => {
+				self.register_flags.config1 -= registers::PacketConfig1::Format_Variable;
+				self.write_reg(Register::Payloadlength, len);
+			},
+			PackageLength::Max(len) => {
+				self.register_flags.config1 |= registers::PacketConfig1::Format_Variable;
+				self.write_reg(Register::Payloadlength, len);
+			},
+		}
+		self.write_reg(Register::Packetconfig1, self.register_flags.config1.bits());
+	}
 
 	// pub fn send(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK=false) {
 	
@@ -212,39 +238,69 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 	}
 
 
-	fn set_rssi_threashold(&self) {
-		//TODO
 
+	fn set_bitrate(&mut self) {
+		//bitrate reg value: F_xosc / bitrate (b/s)
+		match self.bitrate {
+			Bitrate::Lowest => {
+				self.write_reg(Register::Bitratemsb, registers::Bitrate::Msb_1200.bits());
+				self.write_reg(Register::Bitratelsb, registers::Bitrate::Lsb_1200.bits());
+			},
+			Bitrate::Low => {
+				self.write_reg(Register::Bitratemsb, registers::Bitrate::Msb_55555.bits());
+				self.write_reg(Register::Bitratelsb, registers::Bitrate::Lsb_55555.bits());
+			},
+			Bitrate::High => {
+				self.write_reg(Register::Bitratemsb, registers::Bitrate::Msb_200kbps.bits());
+				self.write_reg(Register::Bitratelsb, registers::Bitrate::Lsb_200kbps.bits());
+			},
+			Bitrate::Standard => {
+				self.write_reg(Register::Bitratemsb, registers::Bitrate::Msb_100000.bits());
+				self.write_reg(Register::Bitratelsb, registers::Bitrate::Lsb_100000.bits());
+			},
+			Bitrate::Custom(bitrate) => {
+				let msb = (FXOSC/bitrate >> 8) as u8;
+				let lsb = (FXOSC/bitrate) as u8;
+				self.write_reg(Register::Bitratemsb, msb);
+				self.write_reg(Register::Bitratelsb, lsb);
+			},
+		}
 	}
 
 
-
-	fn set_bitrate(&self) {
-		//TODO
-
+	fn switch_freq(&mut self) -> Result<(),()> {
+		let frf = (self.freq as f32 / RF69_FSTEP) as u32; // divide down by FSTEP to get FRF
+		if self.mode == RadioMode::Tx {
+			self.switch_transeiver_mode_blocking(RadioMode::Rx)?;
+			self.write_reg(Register::Frfmsb, (frf >> 16) as u8);
+			self.write_reg(Register::Frfmid, (frf >> 8) as u8);
+			self.write_reg(Register::Frflsb, frf as u8);
+			self.switch_transeiver_mode_blocking(RadioMode::Tx)?;
+		} else {
+			let old_mode = self.mode;
+			self.write_reg(Register::Frfmsb, (frf >> 16) as u8);
+			self.write_reg(Register::Frfmid, (frf >> 8) as u8);
+			self.write_reg(Register::Frflsb, frf as u8);
+			self.switch_transeiver_mode_blocking(RadioMode::FreqSynth)?;
+			self.switch_transeiver_mode_blocking(old_mode)?;
+		}
+		Ok(())
 	}
 
 	//see page 38 in the datasheet,
 	//TODO research Fdev and do that too
 	fn set_frequency(&mut self) -> Result<(),()> {
-		let FRF = (self.freq as f32 / RF69_FSTEP) as u32; // divide down by FSTEP to get FRF
-	  if self.sequencer_on {//TODO rewrite to use local bitflags copy
-	  	self.write_reg(Register::Opmode, (FRF >> 16) as u8); }
-	  if self.mode == RadioMode::Tx {
-			self.switch_transeiver_mode_blocking(RadioMode::Rx)?;
-			self.write_reg(Register::Frfmsb, (FRF >> 16) as u8);
-			self.write_reg(Register::Frfmid, (FRF >> 8) as u8);
-			self.write_reg(Register::Frflsb, FRF as u8);
-			self.switch_transeiver_mode_blocking(RadioMode::Tx)?;
-		} else {
-			let old_mode = self.mode;
-			self.write_reg(Register::Frfmsb, (FRF >> 16) as u8);
-			self.write_reg(Register::Frfmid, (FRF >> 8) as u8);
-			self.write_reg(Register::Frflsb, FRF as u8);
-			self.switch_transeiver_mode_blocking(RadioMode::FreqSynth)?;
-			self.switch_transeiver_mode_blocking(old_mode)?;
-		}
-		//TODO enable automatic seqencer if it was enabled
+	  if !self.register_flags.mode.contains(registers::OpMode::Sequencer_Off) {
+	  	self.register_flags.mode |= registers::OpMode::Sequencer_Off;
+	  	self.write_reg(Register::Opmode, self.register_flags.mode.bits());
+
+	  	self.switch_freq()?;
+
+	  	self.register_flags.mode -= registers::OpMode::Sequencer_Off;
+	  	self.write_reg(Register::Opmode, self.register_flags.mode.bits());
+	  } else {
+	  	self.switch_freq()?;
+	  }
 		Ok(())
 	}
 
