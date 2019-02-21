@@ -3,6 +3,8 @@
 const READ_OP: u8 =  0b01111111;
 //indicates writing op. after binary OR with reg adress this gives the spi command for writing a reg
 const WRITE_OP: u8 = 0b10000000;
+//to take advantage of the built in AES/CRC limit the packet size to FIFO size
+pub const MAX_PACKET_SIZE: usize = 61; //(66 bytes - 3 bytes overhead - 2 bytes crc)
 
 
 impl Register {
@@ -16,37 +18,42 @@ impl Register {
 }
 
 //list of good defaults for registers that should not change during operation.
-const DEFAULT_RADIO_CONFIG: [[u8;2]; 11] =
+pub const DEFAULT_RADIO_CONFIG: [(Register, u8); 14] =
 [
-	//[Register::Opmode as u8, OpMode::Sequencer_On.bits |  OpMode::Listen_Off.bits |  OpMode::Standby.bits ],//TODO remove from here and do dynamic
-	[Register::Datamodul as u8, Datamodul::Datamode_Packet.bits | Datamodul::Modulationtype_Fsk.bits ],
+	(Register::Datamodul, Datamodul::Datamode_Packet.bits | Datamodul::Modulationtype_Fsk.bits ),
 
-	[Register::Rxbw as u8, RxBw::Dccfreq_010.bits | RxBw::Mant_16.bits | RxBw::Exp_2.bits ],
+	(Register::Rxbw, RxBw::Dccfreq_010.bits | RxBw::Mant_16.bits | RxBw::Exp_2.bits ),
   //only enable interrupts on Dio0
-  [Register::Diomapping1 as u8, DioMapping1::Dio0_01.bits ],
+  (Register::Diomapping1, DioMapping1::Dio0_01.bits ),
   //disable other output pins to save power
-  [Register::Diomapping2 as u8, DioMapping2::Clkout_Off.bits ],
+  (Register::Diomapping2, DioMapping2::Clkout_Off.bits ),
   // Writing To This Bit Ensures That The Fifo & Status Flags Are Reset
-  [Register::Irqflags2 as u8, IrqFlags2::Fifooverrun.bits ],
+  (Register::Irqflags2, IrqFlags2::Fifooverrun.bits ),
 
-  [Register::Syncconfig as u8, SyncConfig::On.bits | SyncConfig::Fifofill_Auto.bits |
-	                             SyncConfig::Size_2.bits | SyncConfig::Tol_0.bits ],//TODO remove
+  (Register::Syncconfig, SyncConfig::On.bits | SyncConfig::Fifofill_Auto.bits |
+	                             SyncConfig::Size_2.bits | SyncConfig::Tol_0.bits ),//TODO remove
   //Default Is 2 Bits For The Sync Value, Thus We Need To Set 2 Syncvalues
-  [Register::Syncvalue1 as u8, 0x2d ], // Attempt To Make This Compatible With Sync1 Byte Of Rfm12b Lib
+  (Register::Syncvalue1, 0x2d ), // Attempt To Make This Compatible With Sync1 Byte Of Rfm12b Lib
 	//syncvalue2 (used as network id) is set in the filtering setup function
 
-  [Register::Packetconfig1 as u8, PacketConfig1::Format_Variable.bits | PacketConfig1::Dcfree_Off.bits |
+  (Register::Packetconfig1, PacketConfig1::Format_Variable.bits | PacketConfig1::Dcfree_Off.bits |
                                   PacketConfig1::Crc_On.bits | PacketConfig1::Crcautoclear_On.bits |
-                                  PacketConfig1::Adrsfiltering_Off.bits ],//TODO remove
+                                  PacketConfig1::Adrsfiltering_Off.bits ),//TODO remove
 
-  [Register::Fifothresh as u8, FifoThresh::Txstart_Fifonotempty.bits | FifoThresh::Value.bits ], // Tx On Fifo Not Empty
+  (Register::Fifothresh, FifoThresh::Txstart_Fifonotempty.bits | FifoThresh::Value.bits ), // Tx On Fifo Not Empty
 
   // Rxrestartdelay Must Match Transmitter Pa Ramp-Down Time (Bitrate Dependent)
-  [Register::Packetconfig2 as u8, PacketConfig2::Rxrestartdelay_2bits.bits |
+  (Register::Packetconfig2, PacketConfig2::Rxrestartdelay_2bits.bits |
 	                                PacketConfig2::Autorxrestart_On.bits |
-	                                PacketConfig2::Aes_Off.bits ],
+	                                PacketConfig2::Aes_Off.bits ),
   // run DAGC continuously in RX mode for Fading Margin Improvement, recommended default for AfcLowBetaOn=0
-  [Register::Testdagc as u8, TestDagc::Improved_Lowbeta0.bits ],
+  (Register::Testdagc, TestDagc::Improved_Lowbeta0.bits ),
+
+	//Frequency Deviation setting,
+	(Register::Fdevmsb, Fdev::Msb_50000.bits ),
+	(Register::Fdevlsb, Fdev::Lsb_50000.bits ),
+
+	(Register::Rssithresh, 220 ), // Must Be Set To Dbm = (-Sensitivity / 2), Default Is 0xe4 = 228 So -114dbm
 ];
 
 pub const FXOSC: u32 =	32_000_000; //crystal osscilator frequency
@@ -482,8 +489,8 @@ struct RxBw: u8 {
 //see table 21 and 22 in datasheet
 #[allow(dead_code)]
 bitflags! {
-struct DioMapping1: u8 {
-	const Dio0_00= 0x00;  // Default
+pub struct DioMapping1: u8 {
+	const Dio0_00 = 0x00;  // Default
 	const Dio0_01 = 0x40;
 	const Dio0_10 = 0x80;
 	const Dio0_11 = 0xc0;
@@ -546,7 +553,7 @@ pub struct IrqFlags1: u8 {
 
 #[allow(dead_code)]
 bitflags! {
-struct IrqFlags2: u8 {
+pub struct IrqFlags2: u8 {
 	const Fifofull             = 0x80;
 	const Fifonotempty         = 0x40;
 	const Fifolevel            = 0x20;

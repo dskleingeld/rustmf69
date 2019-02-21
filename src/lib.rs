@@ -7,9 +7,11 @@ extern crate embedded_hal as hal;
 extern crate bitflags;
 
 use core::num::NonZeroU8;
+use core::cmp::min;
+
 use hal::blocking::spi;
 use hal::digital::OutputPin;
-use hal::spi::{Mode, Phase, Polarity};
+use hal::spi::{Mode, MODE_0, Phase, Polarity};
 use hal::blocking::delay::{DelayMs, DelayUs};
 
 mod registers;
@@ -122,11 +124,28 @@ pub enum FreqencyBand {
 	ISM915mhz,
 }
 
+/// SPI mode
+pub const SPI_MODE: Mode = Mode {
+    phase: Phase::CaptureOnFirstTransition,
+    polarity: Polarity::IdleLow,
+};
+
+pub const SPI_SPEED: u32 = 500_000;
+
 impl<SPI,CS, D, E> Radio<SPI, CS, D>
 where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
       D: DelayMs<u16>+DelayUs<u16>,
       CS: OutputPin,
       E : std::fmt::Debug {
+
+	fn configure_radio(&mut self) -> Result<(),()> {
+		self.set_default_config();
+		self.set_package_filtering();
+		self.set_bitrate();
+		self.set_frequency()?;
+		self.set_payload_length();
+		Ok(())
+	}
 
 	pub fn init(&mut self) -> Result<(),()> {
 		//self.cs.set_high();
@@ -153,19 +172,67 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 			}
 		}
 		if !synced {return Err(())}
-		
+
 		//configure the radio chips for normal use
-		self.configure_radio();
+		self.configure_radio()?;
 
 		Ok(())
 	}
 
-	pub fn configure_radio(&mut self){
+	fn await_interrupt_flag(&mut self, register: Register, flag: registers::IrqFlags2) -> Result<(),()> {
+		for _attempt in 0..10 {//try for one millisecond
+			let interrupt_flag = registers::IrqFlags2::from_bits(self.read_reg(register)).unwrap();
+			if interrupt_flag.contains(flag){
+				return Ok(())
+			}
+			self.delay.delay_us(100u16);
+		}
+		Err(())
+	}
 
-		self.set_package_filtering();
-		self.set_bitrate();
-		self.set_frequency();
-		self.set_payload_length();
+	pub fn send_blocking(&mut self, adress: u8, buffer: &[u8]) -> Result<(),()> {
+		use crate::registers::DioMapping1;
+
+		self.switch_transeiver_mode_blocking(RadioMode::Standby)?;
+		//setup the interrupt pin so an interrupt wil fire once the packet has been send
+		self.write_reg(Register::Diomapping1, DioMapping1::Dio0_00.bits()); //in tx mode Dio0_00: packet sent
+
+		let return_adress = match self.adress_filtering {
+			AddressFiltering::None => {
+				0
+			},
+			AddressFiltering::AddressOnly(node_addr) => {
+				node_addr
+			},
+			AddressFiltering::AddressOrBroadcast((node_addr,_broadcast_addr)) => {
+				node_addr
+			},
+		};
+
+		//spiXfer(spi_handle,  (char*)rawDATA, (char*)rawDATA, bufferSize + 5 );
+		let mut packet = [0u8; registers::MAX_PACKET_SIZE+3];
+		let send_len = min(buffer.len() + 3, registers::MAX_PACKET_SIZE);
+		packet[0] = Register::Fifo.write_address();
+		packet[1] = send_len as u8;
+		packet[2] = adress; //1
+		packet[3] = return_adress; //2
+		packet[4] = 0;//reserved;  //3
+
+		packet[5..5+buffer.len()].clone_from_slice(buffer);
+
+		//self.cs.set_low();
+		self.spi.write(&packet[..5+buffer.len()]).unwrap();
+		//self.cs.set_high();
+
+		self.delay.delay_us(15u16);
+
+		// no need to wait for transmit mode to be ready since its handled by the radio
+		self.switch_transeiver_mode_blocking(RadioMode::Tx)?;
+
+		self.await_interrupt_flag(Register::Irqflags2, registers::IrqFlags2::Packetsent)?;
+
+		self.switch_transeiver_mode_blocking(RadioMode::Rx)?;
+		Ok(())
 	}
 
 	fn set_payload_length(&mut self){
@@ -182,25 +249,12 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		self.write_reg(Register::Packetconfig1, self.register_flags.config1.bits());
 	}
 
-	// pub fn send(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK=false) {
-	
-	
-	// }
-/*
-		[Register::Syncvalue2 as u8, 1 ],    // Will Be Replaced With Network Id
+	fn set_default_config(&mut self) {
+		for (register, bitflag) in registers::DEFAULT_RADIO_CONFIG.iter() {
+			self.write_reg(*register, *bitflag);
+		}
+	}
 
-		//Frequency Deviation setting,
-		[Register::Fdevmsb as u8, Fdev::Msb_50000.bits ],
-		[Register::Fdevlsb as u8, Fdev::Lsb_50000.bits ],
-
-		[Register::Rssithresh as u8, 220 ], // Must Be Set To Dbm = (-Sensitivity / 2), Default Is 0xe4 = 228 So -114dbm
-		[Register::Payloadlength as u8, 66 ], // In Variable Length Mode: The Max Frame Size, Not Used In Tx
-		[Register::Nodeadrs as u8, 0 ], //  Address Filtering
-
-		//Bit Rate setting
-		[Register::Bitratemsb as u8, Bitrate::Msb_55555.bits ],
-		[Register::Bitratelsb as u8, Bitrate::Lsb_55555.bits ],
-*/
 	fn set_package_filtering(&mut self) {
 		use registers::SyncConfig;
 		use registers::PacketConfig1;
