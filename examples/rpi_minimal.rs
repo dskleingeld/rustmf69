@@ -8,9 +8,7 @@ use hal::Pin;
 use hal::sysfs_gpio::Direction;
 use hal::Delay;
 
-use std::{thread, time::Duration};
-
-use pi_rmf69::{radio, FreqencyBand, Bitrate};
+use pi_rmf69::{radio, FreqencyBand};
 
 fn main() {
     let cs = Pin::new(8);
@@ -23,23 +21,14 @@ fn main() {
         .mode(hal::spidev::SPI_MODE_0)
         .build();
 		spi.configure(&options).unwrap();
-		
+
 		let mut radio = radio(spi, cs, Delay)
 			.adress(0)
-			.broadcast(2)
 			.freqency_band(FreqencyBand::ISM433mhz)
-			.fixed_package_length(16)
-			.network_id(core::num::NonZeroU8::new(1).unwrap())
-			.bitrate(Bitrate::Lowest)
-			.power_level(31)
-		.build();
-
+			.build();
 		radio.init().unwrap();
 
 		println!("radio init without problems!");
-
-		loop {
-			radio.send_blocking(5, &[1,2,3]).unwrap();
-			thread::sleep(Duration::from_millis(10));
-		}
+		radio.send_blocking(5, &[1,2,3]).unwrap();
+		println!("radio send done!");
 }

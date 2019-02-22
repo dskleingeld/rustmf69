@@ -664,3 +664,13 @@ struct TestDagc: u8 {
 	const Improved_Lowbeta0 = 0x30;
 }
 }
+
+#[allow(dead_code)]
+bitflags! {
+pub struct PaLevel: u8 {
+	const Pa0_On = 0x80;  // Default
+	const Pa1_On = 0x40;
+	const Pa2_On = 0x20;
+	const Power = 0b11111;
+}
+}

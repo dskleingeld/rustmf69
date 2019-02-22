@@ -4,11 +4,9 @@ use core::num::NonZeroU8;
 
 use hal::blocking::spi;
 use hal::digital::OutputPin;
-use hal::spi::{Mode, Phase, Polarity};
 use hal::blocking::delay::{DelayMs, DelayUs};
 
 use crate::{Radio, AddressFiltering, RegisterFlags, FreqencyBand, Bitrate, RadioMode, PackageLength};
-use crate::registers;
 
 #[derive(Debug, Default)]
 pub struct Yes;
@@ -26,23 +24,23 @@ impl Assigned for Yes {}
 impl NotAssigned for No {}
 
 #[derive(Debug, Clone)]
-pub struct RadioBuilder<SPI, CS, DELAY, E, FREQ_SET, NODE_ID_SET, PACKAGE_LEN_SET>
+pub struct RadioBuilder<SPI, CS, DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET>
 where
 	SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 	DELAY: DelayMs<u16>+DelayUs<u16>,
 	CS: OutputPin,
 
-	FREQ_SET: ToAssign,
-	NODE_ID_SET: ToAssign,
-	PACKAGE_LEN_SET: ToAssign,
+	FREQSET: ToAssign,
+	NODEIDSET: ToAssign,
+	PACKAGELENSET: ToAssign,
 {
 	spi: SPI,
 	cs: CS,
 	delay: DELAY,
 
-	freq_set: PhantomData<FREQ_SET>,
-	node_id_set: PhantomData<NODE_ID_SET>,
-	package_len_set: PhantomData<PACKAGE_LEN_SET>,
+	freq_set: PhantomData<FREQSET>,
+	node_id_set: PhantomData<NODEIDSET>,
+	package_len_set: PhantomData<PACKAGELENSET>,
 
 	freq_band: FreqencyBand, //non optional
 
@@ -55,18 +53,18 @@ where
 	power_level: Option<u8>, //optional (default, max)
 }
 
-impl<SPI, CS, DELAY, E, FREQ_SET, NODE_ID_SET, PACKAGE_LEN_SET> RadioBuilder<SPI, CS, DELAY, E, FREQ_SET, NODE_ID_SET, PACKAGE_LEN_SET>
+impl<SPI, CS, DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> RadioBuilder<SPI, CS, DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET>
 where
 	SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 	DELAY: DelayMs<u16>+DelayUs<u16>,
 	CS: OutputPin,
 	E : core::fmt::Debug,
 
-	FREQ_SET: ToAssign,
-	NODE_ID_SET: ToAssign,
-	PACKAGE_LEN_SET: ToAssign,
+	FREQSET: ToAssign,
+	NODEIDSET: ToAssign,
+	PACKAGELENSET: ToAssign,
 {
-	pub fn adress(self, adress: u8) -> RadioBuilder<SPI,CS,DELAY, E, FREQ_SET, Yes, PACKAGE_LEN_SET> {
+	pub fn adress(self, adress: u8) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, Yes, PACKAGELENSET> {
 		RadioBuilder {
 			node_address: adress,
 
@@ -87,7 +85,7 @@ where
 		}
 	}
 
-	pub fn freqency_band(self, freq_band: FreqencyBand) -> RadioBuilder<SPI,CS,DELAY, E, Yes, NODE_ID_SET, PACKAGE_LEN_SET> {
+	pub fn freqency_band(self, freq_band: FreqencyBand) -> RadioBuilder<SPI,CS,DELAY, E, Yes, NODEIDSET, PACKAGELENSET> {
 		RadioBuilder {
 			freq_band: freq_band,
 
@@ -108,7 +106,7 @@ where
 		}
 	}
 
-	pub fn fixed_package_length(self, len: u8) -> RadioBuilder<SPI,CS,DELAY, E, Yes, NODE_ID_SET, Yes> {
+	pub fn fixed_package_length(self, len: u8) -> RadioBuilder<SPI,CS,DELAY, E, Yes, NODEIDSET, Yes> {
 		RadioBuilder {
 
 			spi: self.spi,
@@ -129,7 +127,7 @@ where
 		}
 	}
 
-	pub fn max_package_length(self, len: u8) -> RadioBuilder<SPI,CS,DELAY, E, Yes, NODE_ID_SET, Yes> {
+	pub fn max_package_length(self, len: u8) -> RadioBuilder<SPI,CS,DELAY, E, Yes, NODEIDSET, Yes> {
 		RadioBuilder {
 
 
@@ -151,26 +149,26 @@ where
 		}
 	}
 
-	pub fn broadcast(self, broadcast_adress: u8) -> RadioBuilder<SPI,CS,DELAY, E, FREQ_SET, NODE_ID_SET, PACKAGE_LEN_SET> {
+	pub fn broadcast(self, broadcast_adress: u8) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
 
 		RadioBuilder {
 			broadcast_addr: Some(broadcast_adress),
 			..self
 		}
 	}
-	pub fn network_id(self, network_id: NonZeroU8) -> RadioBuilder<SPI,CS,DELAY, E, FREQ_SET, NODE_ID_SET, PACKAGE_LEN_SET> {
+	pub fn network_id(self, network_id: NonZeroU8) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
 		RadioBuilder {
 			network_id: Some(network_id),
 			..self
 		}
 	}
-	pub fn bitrate(self, bitrate: Bitrate) -> RadioBuilder<SPI,CS,DELAY, E, FREQ_SET, NODE_ID_SET, PACKAGE_LEN_SET> {
+	pub fn bitrate(self, bitrate: Bitrate) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
 		RadioBuilder {
 			bitrate: Some(bitrate),
 			..self
 		}
 	}
-	pub fn power_level(self, power_level: u8) -> RadioBuilder<SPI,CS,DELAY, E, FREQ_SET, NODE_ID_SET, PACKAGE_LEN_SET> {
+	pub fn power_level(self, power_level: u8) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
 		RadioBuilder {
 			power_level: Some(power_level),
 			..self
@@ -214,13 +212,13 @@ fn default_band_freq(freq_band: &FreqencyBand) -> u32 {
 	}
 }
 
-impl<SPI, CS, DELAY, E, PACKAGE_LEN_SET> RadioBuilder<SPI, CS, DELAY, E, Yes, Yes, PACKAGE_LEN_SET>
+impl<SPI, CS, DELAY, E, PACKAGELENSET> RadioBuilder<SPI, CS, DELAY, E, Yes, Yes, PACKAGELENSET>
 where
 	SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 	DELAY: DelayMs<u16>+DelayUs<u16>,
 	CS: OutputPin,
 	E : core::fmt::Debug,
-	PACKAGE_LEN_SET: ToAssign,
+	PACKAGELENSET: ToAssign,
  {
 
 	pub fn build(self) -> Radio<SPI, CS, DELAY> {
@@ -237,7 +235,6 @@ where
 			delay: self.delay,
 
 			freq: default_band_freq(&self.freq_band),
-			freq_band: self.freq_band, //non optional
 			bitrate: self.bitrate.unwrap_or(Bitrate::default()),   //optional (default = smthg)
 			power_level: self.power_level.unwrap_or(31), //optional (default, max)
 

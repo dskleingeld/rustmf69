@@ -11,7 +11,7 @@ use core::cmp::min;
 
 use hal::blocking::spi;
 use hal::digital::OutputPin;
-use hal::spi::{Mode, MODE_0, Phase, Polarity};
+use hal::spi::{Mode, Phase, Polarity};
 use hal::blocking::delay::{DelayMs, DelayUs};
 
 mod registers;
@@ -24,7 +24,6 @@ pub struct Radio<SPI, CS, DELAY> {
 	cs: CS,
 	delay: DELAY,
 
-	freq_band: FreqencyBand, //non optional
 	freq: u32,
 	bitrate: Bitrate,   //optional (default = smthg)
 	power_level: u8, //optional (default, max)
@@ -43,6 +42,7 @@ struct RegisterFlags {
 	mode: registers::OpMode,
 	sync: registers::SyncConfig,
 	config1: registers::PacketConfig1,
+	pa_level: registers::PaLevel,
 }
 
 impl Default for RegisterFlags {
@@ -60,10 +60,14 @@ impl Default for RegisterFlags {
 			      | registers::PacketConfig1::Crc_On
 			      | registers::PacketConfig1::Crcautoclear_On
 			      | registers::PacketConfig1::Adrsfiltering_Off,
+			pa_level: registers::PaLevel::Pa0_On
+			      & !registers::PaLevel::Pa1_On
+			      & !registers::PaLevel::Pa2_On,
 		}
 	}
 }
 
+#[allow(dead_code)]
 enum AddressFiltering {
 	None,
 	AddressOnly(u8),
@@ -144,8 +148,10 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		self.set_bitrate();
 		self.set_frequency()?;
 		self.set_payload_length();
+		self.set_power_level();
 		Ok(())
 	}
+
 
 	pub fn init(&mut self) -> Result<(),()> {
 		//self.cs.set_high();
@@ -177,6 +183,14 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		self.configure_radio()?;
 
 		Ok(())
+	}
+
+	fn set_power_level(&mut self) {
+		use crate::registers::PaLevel;
+		self.register_flags.pa_level -= PaLevel::Power;
+		self.register_flags.pa_level |= PaLevel::from_bits(self.power_level).unwrap_or(PaLevel::Power);
+
+		self.write_reg(Register::Palevel, self.register_flags.pa_level.bits());
 	}
 
 	fn await_interrupt_flag(&mut self, register: Register, flag: registers::IrqFlags2) -> Result<(),()> {
