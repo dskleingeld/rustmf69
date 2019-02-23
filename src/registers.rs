@@ -18,7 +18,7 @@ impl Register {
 }
 
 //list of good defaults for registers that should not change during operation.
-pub const DEFAULT_RADIO_CONFIG: [(Register, u8); 14] =
+pub const DEFAULT_RADIO_CONFIG: [(Register, u8); 13] =
 [
 	(Register::Datamodul, Datamodul::Datamode_Packet.bits | Datamodul::Modulationtype_Fsk.bits ),
 
@@ -42,10 +42,6 @@ pub const DEFAULT_RADIO_CONFIG: [(Register, u8); 14] =
 
   (Register::Fifothresh, FifoThresh::Txstart_Fifonotempty.bits | FifoThresh::Value.bits ), // Tx On Fifo Not Empty
 
-  // Rxrestartdelay Must Match Transmitter Pa Ramp-Down Time (Bitrate Dependent)
-  (Register::Packetconfig2, PacketConfig2::Rxrestartdelay_2bits.bits |
-	                                PacketConfig2::Autorxrestart_On.bits |
-	                                PacketConfig2::Aes_Off.bits ),
   // run DAGC continuously in RX mode for Fading Margin Improvement, recommended default for AfcLowBetaOn=0
   (Register::Testdagc, TestDagc::Improved_Lowbeta0.bits ),
 
@@ -632,7 +628,7 @@ struct FifoThresh: u8 {
 
 #[allow(dead_code)]
 bitflags! {
-struct PacketConfig2: u8 {
+pub struct PacketConfig2: u8 {
 	const Rxrestartdelay_1bit        = 0x00;
 	const Rxrestartdelay_2bits       = 0x10;
 	const Rxrestartdelay_4bits       = 0x20;
@@ -652,7 +648,6 @@ struct PacketConfig2: u8 {
 	const Autorxrestart_Off          = 0x00;
 
 	const Aes_On                     = 0x01;
-	const Aes_Off                    = 0x00;
 }
 }
 

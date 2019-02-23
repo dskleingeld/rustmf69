@@ -1,4 +1,4 @@
-//use: cargo run --example rpi
+//use: cargo run --example rpi --
 extern crate linux_embedded_hal as hal;
 extern crate pi_rmf69;
 
@@ -13,33 +13,34 @@ use std::{thread, time::Duration};
 use pi_rmf69::{radio, FreqencyBand, Bitrate};
 
 fn main() {
-    let cs = Pin::new(8);
-    cs.export().unwrap();
-    cs.set_direction(Direction::Out).unwrap();
+  let cs = Pin::new(8);
+  cs.export().unwrap();
+  cs.set_direction(Direction::Out).unwrap();
 
-    let mut spi = Spidev::open("/dev/spidev0.1").unwrap();
-    let options = SpidevOptions::new()
-        .max_speed_hz(pi_rmf69::SPI_SPEED)
-        .mode(hal::spidev::SPI_MODE_0)
-        .build();
-		spi.configure(&options).unwrap();
-		
-		let mut radio = radio(spi, cs, Delay)
-			.adress(0)
-			.broadcast(2)
-			.freqency_band(FreqencyBand::ISM433mhz)
-			.fixed_package_length(16)
-			.network_id(core::num::NonZeroU8::new(1).unwrap())
-			.bitrate(Bitrate::Lowest)
-			.power_level(31)
-		.build();
+  let mut spi = Spidev::open("/dev/spidev0.1").unwrap();
+  let options = SpidevOptions::new()
+    .max_speed_hz(pi_rmf69::SPI_SPEED)
+    .mode(hal::spidev::SPI_MODE_0)
+    .build();
+	spi.configure(&options).unwrap();
 
-		radio.init().unwrap();
+	let mut radio = radio(spi, cs, Delay)
+		.adress(0)
+		.broadcast(2)
+		.freqency_band(FreqencyBand::ISM433mhz)
+		.fixed_package_length(16)
+		.network_id(core::num::NonZeroU8::new(1).unwrap())
+		.bitrate(Bitrate::Lowest)
+		.power_level(31)
+		.set_key(b"hi")
+	.build();
 
-		println!("radio init without problems!");
+	radio.init().unwrap();
 
-		loop {
-			radio.send_blocking(5, &[1,2,3]).unwrap();
-			thread::sleep(Duration::from_millis(10));
-		}
+	println!("radio init without problems!");
+
+	loop {
+		radio.send_blocking(5, &[1,2,3]).unwrap();
+		thread::sleep(Duration::from_millis(10));
+	}
 }

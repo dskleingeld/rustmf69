@@ -30,6 +30,7 @@ pub struct Radio<SPI, CS, DELAY> {
 
 	network_filtering: Option<NonZeroU8>,
 	adress_filtering: AddressFiltering,
+	encryption_key: Option<[u8;17]>,
 
 	mode: RadioMode,
 	package_len: PackageLength,
@@ -42,6 +43,7 @@ struct RegisterFlags {
 	mode: registers::OpMode,
 	sync: registers::SyncConfig,
 	config1: registers::PacketConfig1,
+	config2: registers::PacketConfig2,
 	pa_level: registers::PaLevel,
 }
 
@@ -60,6 +62,9 @@ impl Default for RegisterFlags {
 			      | registers::PacketConfig1::Crc_On
 			      | registers::PacketConfig1::Crcautoclear_On
 			      | registers::PacketConfig1::Adrsfiltering_Off,
+			config2: registers::PacketConfig2::Rxrestartdelay_2bits
+			      & !registers::PacketConfig2::Aes_On
+			      | registers::PacketConfig2::Autorxrestart_On,
 			pa_level: registers::PaLevel::Pa0_On
 			      & !registers::PaLevel::Pa1_On
 			      & !registers::PaLevel::Pa2_On,
@@ -149,6 +154,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		self.set_frequency()?;
 		self.set_payload_length();
 		self.set_power_level();
+		self.set_encryption_key()?;
 		Ok(())
 	}
 
@@ -182,6 +188,29 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		//configure the radio chips for normal use
 		self.configure_radio()?;
 
+		Ok(())
+	}
+
+	// To enable encryption: radio.encrypt("ABCDEFGHIJKLMNOP");
+	// To disable encryption: radio.encrypt(null) or radio.encrypt(0)
+	// KEY HAS TO BE 16 bytes !!!
+	fn set_encryption_key(&mut self) -> Result<(),()> {
+
+		self.switch_transeiver_mode_blocking(RadioMode::Standby)?;
+
+		match self.encryption_key {
+			None =>
+				self.register_flags.config2 &= !registers::PacketConfig2::Aes_On, //set aes off
+			Some(mut key) => {
+		  	self.register_flags.config2 |= registers::PacketConfig2::Aes_On; //set aes on
+		  	key[0] = Register::Aeskey1.write_address();
+		  	self.spi.write(&key).unwrap();
+			},
+		}
+		self.delay.delay_us(15u16);
+
+		self.write_reg(Register::Packetconfig2, self.register_flags.config2.bits());
+		self.switch_transeiver_mode_blocking(RadioMode::Rx)?;
 		Ok(())
 	}
 

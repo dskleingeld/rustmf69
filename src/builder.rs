@@ -51,6 +51,7 @@ where
 	bitrate: Option<Bitrate>,   //optional (default = smthg)
 	package_len: Option<PackageLength>,
 	power_level: Option<u8>, //optional (default, max)
+	aes_key: Option<[u8;17]>
 }
 
 impl<SPI, CS, DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> RadioBuilder<SPI, CS, DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET>
@@ -82,6 +83,7 @@ where
 			bitrate: self.bitrate,
 			package_len: self.package_len,
 			power_level: self.power_level,
+			aes_key: self.aes_key,
 		}
 	}
 
@@ -103,6 +105,7 @@ where
 			bitrate: self.bitrate,
 			package_len: self.package_len,
 			power_level: self.power_level,
+			aes_key: self.aes_key,
 		}
 	}
 
@@ -124,6 +127,7 @@ where
 			bitrate: self.bitrate,
 			package_len: Some(PackageLength::Fixed(len)),
 			power_level: self.power_level,
+			aes_key: self.aes_key,
 		}
 	}
 
@@ -146,6 +150,7 @@ where
 			bitrate: self.bitrate,
 			package_len: Some(PackageLength::Max(len)),
 			power_level: self.power_level,
+			aes_key: self.aes_key,
 		}
 	}
 
@@ -171,6 +176,26 @@ where
 	pub fn power_level(self, power_level: u8) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
 		RadioBuilder {
 			power_level: Some(power_level),
+			..self
+		}
+	}
+
+	#[cfg(feature = "std")]
+	pub fn set_key(self, key: String) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
+		let mut key_array = [0u8; 17];
+		key_array[1..].copy_from_slice(key.as_bytes());
+
+		RadioBuilder {
+			aes_key: Some(key_array),
+			..self
+		}
+	}
+	#[cfg(not(feature = "std"))]
+	pub fn set_key(self, key: &[u8]) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
+		let mut key_array = [0u8; 17];
+		key_array[1..].copy_from_slice(key);
+		RadioBuilder {
+			aes_key: Some([0u8;17]),
 			..self
 		}
 	}
@@ -200,6 +225,7 @@ where
 		bitrate: None,
 		package_len: None,
 		power_level: None,
+		aes_key: None,
   }
 }
 
@@ -243,6 +269,7 @@ where
 
 			mode: RadioMode::Standby,
 			package_len: self.package_len.unwrap_or(PackageLength::default()),
+			encryption_key: self.aes_key,
 
 			register_flags: RegisterFlags::default(),
 		}
