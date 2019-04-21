@@ -145,21 +145,21 @@ impl<SPI,CS, D, E> Radio<SPI, CS, D>
 where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
       D: DelayMs<u16>+DelayUs<u16>,
       CS: OutputPin,
-      E : std::fmt::Debug {
+	  E: core::fmt::Debug {
 
-	fn configure_radio(&mut self) -> Result<(),()> {
+	fn configure_radio(&mut self) -> Result<(),&'static str> {
 		self.set_default_config();
 		self.set_package_filtering();
 		self.set_bitrate();
 		self.set_frequency()?;
 		self.set_payload_length();
 		self.set_power_level();
-		self.set_encryption_key()?;
+		self.set_encryption_key();
 		Ok(())
 	}
 
 
-	pub fn init(&mut self) -> Result<(),()> {
+	pub fn init(&mut self) -> Result<(),&'static str> {
 		//self.cs.set_high();
 
 		//check if the radio responds by seeing if we can change a register
@@ -172,7 +172,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 				break;
 			}
 		}
-		if !synced {return Err(())}
+		if !synced {return Err("could not communicate with radio")}
 
 		synced =	false;
 		for _attempt in 0..100 {
@@ -183,7 +183,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 				break;
 			}
 		}
-		if !synced {return Err(())}
+		if !synced {return Err("could not communicate with radio")}
 
 		//configure the radio chips for normal use
 		self.configure_radio()?;
@@ -194,7 +194,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 	// To enable encryption: radio.encrypt("ABCDEFGHIJKLMNOP");
 	// To disable encryption: radio.encrypt(null) or radio.encrypt(0)
 	// KEY HAS TO BE 16 bytes !!!
-	fn set_encryption_key(&mut self) -> Result<(),()> {
+	fn set_encryption_key(&mut self) -> Result<(),&'static str> {
 
 		self.switch_transeiver_mode_blocking(RadioMode::Standby)?;
 
@@ -222,7 +222,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		self.write_reg(Register::Palevel, self.register_flags.pa_level.bits());
 	}
 
-	fn await_interrupt_flag(&mut self, register: Register, flag: registers::IrqFlags2) -> Result<(),()> {
+	fn await_interrupt_flag(&mut self, register: Register, flag: registers::IrqFlags2) -> Result<(),&'static str> {
 		for _attempt in 0..10 {//try for one millisecond
 			let interrupt_flag = registers::IrqFlags2::from_bits(self.read_reg(register)).unwrap();
 			if interrupt_flag.contains(flag){
@@ -230,10 +230,10 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 			}
 			self.delay.delay_us(100u16);
 		}
-		Err(())
+		Err("interrupt flag was not set within timeout")
 	}
 
-	pub fn send_blocking(&mut self, adress: u8, buffer: &[u8]) -> Result<(),()> {
+	pub fn send_blocking(&mut self, adress: u8, buffer: &[u8]) -> Result<(),&'static str> {
 		use crate::registers::DioMapping1;
 
 		self.switch_transeiver_mode_blocking(RadioMode::Standby)?;
@@ -365,7 +365,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 	}
 
 
-	fn switch_freq(&mut self) -> Result<(),()> {
+	fn switch_freq(&mut self) -> Result<(),&'static str> {
 		let frf = (self.freq as f32 / RF69_FSTEP) as u32; // divide down by FSTEP to get FRF
 		if self.mode == RadioMode::Tx {
 			self.switch_transeiver_mode_blocking(RadioMode::Rx)?;
@@ -386,7 +386,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 
 	//see page 38 in the datasheet,
 	//TODO research Fdev and do that too
-	fn set_frequency(&mut self) -> Result<(),()> {
+	fn set_frequency(&mut self) -> Result<(),&'static str> {
 	  if !self.register_flags.mode.contains(registers::OpMode::Sequencer_Off) {
 	  	self.register_flags.mode |= registers::OpMode::Sequencer_Off;
 	  	self.write_reg(Register::Opmode, self.register_flags.mode.bits());
@@ -416,7 +416,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 		self.mode = new_mode;
 	}
 
-	fn switch_transeiver_mode_blocking(&mut self, new_mode: RadioMode) -> Result<(),()>{
+	fn switch_transeiver_mode_blocking(&mut self, new_mode: RadioMode) -> Result<(),&'static str>{
 		use registers::IrqFlags1;
 
 		self.switch_transceiver_mode(new_mode);
@@ -427,7 +427,7 @@ where SPI: spi::Transfer<u8, Error = E> + spi::Write<u8, Error = E>,
 			}
 			self.delay.delay_us(100u16);
 		}
-		Err(())
+		Err("transiever did not switch within timeout")
 	}
 
 	fn write_reg(&mut self, addr: Register, value: u8) {

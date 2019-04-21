@@ -33,7 +33,7 @@ fn main() {
 		.bitrate(Bitrate::Lowest)
 		.power_level(31)
 		.set_key(b"hi")
-	.build();
+		.build();
 
 	radio.init().unwrap();
 

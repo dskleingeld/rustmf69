@@ -183,7 +183,7 @@ where
 	#[cfg(feature = "std")]
 	pub fn set_key(self, key: String) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
 		let mut key_array = [0u8; 17];
-		key_array[1..].copy_from_slice(key.as_bytes());
+		key_array[0..key.len()].copy_from_slice(key.as_bytes());
 
 		RadioBuilder {
 			aes_key: Some(key_array),
@@ -193,7 +193,7 @@ where
 	#[cfg(not(feature = "std"))]
 	pub fn set_key(self, key: &[u8]) -> RadioBuilder<SPI,CS,DELAY, E, FREQSET, NODEIDSET, PACKAGELENSET> {
 		let mut key_array = [0u8; 17];
-		key_array[1..].copy_from_slice(key);
+		key_array[0..key.len()].copy_from_slice(key);
 		RadioBuilder {
 			aes_key: Some([0u8;17]),
 			..self

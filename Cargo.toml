@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 embedded-hal = "0.2.2"
 bitflags = "1.0.4"
-typed-builder = "0.2.0"
+typed-builder = "0.2.0" #TODO disable
 
 # Dev-dependencies are not used when compiling a package for building, 
 # but are used for compiling tests, examples, and benchmarks.
